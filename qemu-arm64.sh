@@ -3,7 +3,9 @@ set -e
 cd "$(dirname "$0")"
 
 USER_DISK_IMAGE=user-data.qcow2
-QEMU_ARGS=()  # extra args to qemu-system-aarch64
+QEMU_ARGS=(\
+  -smp 4
+)
 
 ALPINE_VERSION=3.13.4
 # ALPINE_IMG_FILE=alpine-virt-$ALPINE_VERSION-aarch64.iso
@@ -11,21 +13,44 @@ ALPINE_IMG_FILE=alpine-standard-$ALPINE_VERSION-aarch64.iso
 ALPINE_IMG_URL=https://dl-cdn.alpinelinux.org/alpine
 ALPINE_IMG_URL=$ALPINE_IMG_URL/v${ALPINE_VERSION%.*}/releases/aarch64/$ALPINE_IMG_FILE
 
+INSTALL=
+if [ "$1" = "install" ]; then INSTALL=1; shift; fi
+
 if [ ! -f "$USER_DISK_IMAGE" ]; then
   if [ -f user-data-init.qcow2 ]; then
     cp -v user-data-init.qcow2 "$USER_DISK_IMAGE"
   else
     echo "Missing user-data-init.qcow2 -- making new blank image" >&2
     qemu-img create -f qcow2 -o compression_type=zlib "$USER_DISK_IMAGE" 64G
-    qemu-img create -f qcow2 -o compression_type=zlib tmp.qcow2 64G
-    [ -f $ALPINE_IMG_FILE ] || wget "$ALPINE_IMG_URL"
-    QEMU_ARGS+=( \
-      -cdrom "$ALPINE_IMG_FILE" \
-      -drive "if=virtio,file=tmp.qcow2" \
-    )
+    INSTALL=1
   fi
   chmod 0600 "$USER_DISK_IMAGE"
 fi
+
+if [ -n $INSTALL ]; then
+  if ! [ -f $ALPINE_IMG_FILE ]; then
+    echo "downloading $ALPINE_IMG_URL"
+    curl -L --progress-bar -O "$ALPINE_IMG_URL"
+  fi
+  rm -f tmp.qcow2
+  qemu-img create -f qcow2 -o compression_type=zlib tmp.qcow2 64G
+  QEMU_ARGS+=( \
+    -cdrom "$ALPINE_IMG_FILE" \
+    -drive "if=virtio,file=tmp.qcow2" \
+  )
+fi
+
+case "$(uname -m)" in
+arm64)
+  QEMU_ARGS+=( \
+    -cpu host \
+    -accel hvf \
+  ) ;;
+*)
+  QEMU_ARGS+=( \
+    -cpu cortex-a72 \
+  ) ;;
+esac
 
 # [ -f QEMU_EFI.fd ] ||
 #   wget http://releases.linaro.org/components/kernel/uefi-linaro/16.02/release/qemu64/QEMU_EFI.fd
@@ -38,8 +63,6 @@ fi
 
 exec qemu-system-aarch64 \
   -M virt \
-  -cpu cortex-a72 \
-  -smp 4 \
   -m 2048 \
   -rtc base=utc,clock=host,driftfix=slew \
   \
