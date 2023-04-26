@@ -27,7 +27,7 @@ if [ ! -f "$USER_DISK_IMAGE" ]; then
   chmod 0600 "$USER_DISK_IMAGE"
 fi
 
-if [ -n $INSTALL ]; then
+if [ -n "$INSTALL" ]; then
   if ! [ -f $ALPINE_IMG_FILE ]; then
     echo "downloading $ALPINE_IMG_URL"
     curl -L --progress-bar -O "$ALPINE_IMG_URL"
